@@ -512,6 +512,21 @@ class Battleship(tk.Tk):
             "You won! 🏆" if player_wins else "You lost! 💀\nBetter luck next time."
         )
 
+    # ── misc ──────────────────────────────────────────────────────────────────
+    def _show_rules(self):
+        rules = (
+            "BATTLESHIP RULES\n\n"
+            "• Each player has a 10×10 grid and 5 ships.\n"
+            "• Ships: Carrier(5), Battleship(4),\n"
+            "  Cruiser(3), Submarine(3), Destroyer(2).\n\n"
+            "• Click any cell in Enemy Waters to fire.\n"
+            "• 🎯 Red = hit   · = miss\n"
+            "• Sink all 5 enemy ships to win!\n\n"
+            "• The AI gets smarter after a hit —\n"
+            "  it hunts adjacent cells automatically."
+        )
+        messagebox.showinfo("Rules", rules)
+
 if __name__ == "__main__":
     app = Battleship()
     app.mainloop()
