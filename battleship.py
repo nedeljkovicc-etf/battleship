@@ -216,6 +216,18 @@ class Battleship(tk.Tk):
         self.player_turn   = True
         self.hover_cell    = None
 
+        # AI targeting state
+        self.ai_targets    = []          # queue of adjacent cells after a hit
+        self.ai_last_hit   = None
+        self.ai_fired      = set()
+        self._ai_shots = {}
+
+        self._redraw_all()
+        self._update_fleet_panel()
+        self.msg_var.set("FIRE at enemy waters!")
+        self.turn_var.set("Your turn")
+        self._update_stats()
+
     # ── drawing ────────────────────────────────────────────────────────────────
     def _redraw_all(self):
         self._redraw_player()
@@ -408,6 +420,59 @@ class Battleship(tk.Tk):
 
         self.turn_var.set("Enemy turn...")
         self.after(900, self._ai_turn)
+
+    def _ai_turn(self):
+        if not hasattr(self, "_ai_shots"):
+            self._ai_shots = {}
+
+        # smart AI: work through target queue, else random
+        fired = False
+        while self.ai_targets:
+            cell = self.ai_targets.pop(0)
+            if cell not in self.ai_fired:
+                r, col = cell
+                fired = True
+                break
+
+        if not fired:
+            available = [(r, c) for r in range(GRID) for c in range(GRID)
+                         if (r, c) not in self.ai_fired]
+            if not available:
+                return
+            r, col = random.choice(available)
+
+        self.ai_fired.add((r, col))
+
+        ship_name = self.player_board[r][col]
+        if ship_name:
+            self._ai_shots[(r, col)] = "hit"
+            # find the ship object and register hit
+            ship_obj = next((s for s in self.player_ships if s["name"]==ship_name), None)
+            if ship_obj:
+                ship_obj["hits"].add((r, col))
+                if len(ship_obj["hits"]) == ship_obj["size"]:
+                    self.ai_sunk += 1
+                    self.msg_var.set(f"💀 Enemy sunk your {ship_name}!")
+                else:
+                    # queue adjacent cells
+                    for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
+                        nr, nc = r+dr, col+dc
+                        if 0<=nr<GRID and 0<=nc<GRID and (nr,nc) not in self.ai_fired:
+                            self.ai_targets.insert(0, (nr, nc))
+                    self.msg_var.set("💥 Enemy scored a hit on your fleet!")
+        else:
+            self._ai_shots[(r, col)] = "miss"
+            if not self.msg_var.get().startswith("💀"):
+                self.msg_var.set("💧 Enemy missed!")
+
+        self._redraw_player()
+
+        if self._check_win(self.player_ships):
+            self._end_game(player_wins=False)
+            return
+
+        self.player_turn = True
+        self.turn_var.set("Your turn")
 
     def _fire(self, r, col, board, ships, visible):
         ship_name = board[r][col]
