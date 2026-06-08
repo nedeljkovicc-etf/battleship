@@ -216,6 +216,140 @@ class Battleship(tk.Tk):
         self.player_turn   = True
         self.hover_cell    = None
 
+    # ── drawing ────────────────────────────────────────────────────────────────
+    def _redraw_all(self):
+        self._redraw_player()
+        self._redraw_enemy()
+
+    def _redraw_player(self):
+        c = self.player_canvas
+        c.delete("cell")
+        for r in range(GRID):
+            for col in range(GRID):
+                x1, y1, x2, y2 = self._cell_coords(r, col)
+                ship = self.player_board[r][col]
+                if ship:
+                    # check if sunk
+                    ship_obj = next((s for s in self.player_ships if s["name"]==ship), None)
+                    if ship_obj and len(ship_obj["hits"]) == ship_obj["size"]:
+                        fill = SUNK_CLR
+                    else:
+                        fill = SHIP_CLR
+                else:
+                    fill = OCEAN
+                state = self.enemy_hidden[r][col] if self.enemy_hidden[r][col] else None
+                # draw cell (player board shows ships + AI shots)
+                c.create_rectangle(x1+1, y1+1, x2-1, y2-1,
+                                   fill=fill, outline="", tags="cell")
+                # mark AI shots on player board
+                shot = self._get_player_shot(r, col)
+                if shot == "hit":
+                    self._draw_explosion(c, x1, y1, x2, y2)
+                elif shot == "miss":
+                    self._draw_splash(c, x1, y1, x2, y2)
+
+    def _redraw_enemy(self):
+        c = self.enemy_canvas
+        c.delete("cell")
+        for r in range(GRID):
+            for col in range(GRID):
+                x1, y1, x2, y2 = self._cell_coords(r, col)
+                shot = self.enemy_hidden[r][col]
+                if shot == "hit":
+                    c.create_rectangle(x1+1,y1+1,x2-1,y2-1,
+                                       fill=HIT_CLR, outline="", tags="cell")
+                    self._draw_explosion(c, x1, y1, x2, y2)
+                elif shot == "miss":
+                    c.create_rectangle(x1+1,y1+1,x2-1,y2-1,
+                                       fill=MISS_CLR, outline="", tags="cell")
+                    self._draw_splash(c, x1, y1, x2, y2)
+                else:
+                    fill = OCEAN
+                    if self.hover_cell == (r, col) and self.player_turn and not self.game_over:
+                        fill = "#0f2d47"
+                    c.create_rectangle(x1+1,y1+1,x2-1,y2-1,
+                                       fill=fill, outline="", tags="cell")
+
+        # draw sunk ships on enemy board
+        for ship in self.enemy_ships:
+            if len(ship["hits"]) == ship["size"]:
+                for (r, col) in ship["cells"]:
+                    x1,y1,x2,y2 = self._cell_coords(r, col)
+                    c.create_rectangle(x1+1,y1+1,x2-1,y2-1,
+                                       fill=SUNK_CLR, outline="", tags="cell")
+                    self._draw_explosion(c, x1, y1, x2, y2)
+
+    def _cell_coords(self, r, col):
+        x1 = PAD + col*CELL
+        y1 = PAD + r*CELL
+        return x1, y1, x1+CELL, y1+CELL
+
+    def _draw_explosion(self, c, x1, y1, x2, y2):
+        cx, cy = (x1+x2)//2, (y1+y2)//2
+        r = CELL//2 - 6
+        c.create_oval(cx-r, cy-r, cx+r, cy+r,
+                      fill=HIT_CLR, outline="#ff8060", width=1, tags="cell")
+        c.create_text(cx, cy, text="✕", fill="white",
+                      font=("Courier New", 11, "bold"), tags="cell")
+
+    def _draw_splash(self, c, x1, y1, x2, y2):
+        cx, cy = (x1+x2)//2, (y1+y2)//2
+        c.create_text(cx, cy, text="·", fill="#3a7fa8",
+                      font=("Courier New", 16, "bold"), tags="cell")
+
+    def _get_player_shot(self, r, col):
+        """Return 'hit'/'miss'/None for what AI has shot on player board."""
+        ship = self.player_board[r][col]
+        # check if AI fired here: we store in enemy_board-like structure
+        return getattr(self, "_ai_shots", {}).get((r, col))
+
+    # ── fleet panel ───────────────────────────────────────────────────────────
+    def _update_fleet_panel(self):
+        for name, info in self.fleet_labels.items():
+            for w in info["widgets"]:
+                w.destroy()
+            info["widgets"].clear()
+            ship_obj = next((s for s in self.enemy_ships if s["name"]==name), None)
+            sunk = ship_obj and len(ship_obj["hits"]) == ship_obj["size"]
+            for i in range(info["size"]):
+                hit = ship_obj and i in {h for h in range(info["size"])
+                                         if list(ship_obj["cells"])[i] in
+                                         [(r,c) for (r,c) in ship_obj["hits"]]} \
+                      if ship_obj else False
+                # simpler: just colour all red if sunk, partial hits yellow
+                if sunk:
+                    clr = SUNK_CLR
+                else:
+                    clr = SHIP_CLR
+                sq = tk.Frame(info["squares"], width=8, height=8,
+                              bg=clr, relief="flat")
+                sq.pack(side="left", padx=1)
+                sq.pack_propagate(False)
+                info["widgets"].append(sq)
+
+    def _update_fleet_status(self):
+        """Colour fleet squares to show hits / sunk."""
+        for name, info in self.fleet_labels.items():
+            ship_obj = next((s for s in self.enemy_ships if s["name"]==name), None)
+            if not ship_obj:
+                continue
+            sunk = len(ship_obj["hits"]) == ship_obj["size"]
+            for i, w in enumerate(info["widgets"]):
+                cell = ship_obj["cells"][i]
+                if sunk:
+                    clr = SUNK_CLR
+                elif cell in ship_obj["hits"]:
+                    clr = HIT_CLR
+                else:
+                    clr = SHIP_CLR
+                w.configure(bg=clr)
+
+    # ── stats ─────────────────────────────────────────────────────────────────
+    def _update_stats(self):
+        self.hits_var.set(f"Hits: {self.player_hits}")
+        self.misses_var.set(f"Misses: {self.player_misses}")
+        self.sunk_var.set(f"Sunk: {self.player_sunk}/5")
+
     # ── event handlers ────────────────────────────────────────────────────────
     def _on_hover(self, event):
         cell = self._pixel_to_cell(event.x, event.y)
