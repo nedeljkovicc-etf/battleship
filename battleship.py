@@ -490,3 +490,28 @@ class Battleship(tk.Tk):
 
     def _check_win(self, ships):
         return all(len(s["hits"]) == s["size"] for s in ships)
+    
+    def _end_game(self, player_wins):
+        self.game_over = True
+        self.player_turn = False
+        if player_wins:
+            self.msg_var.set("🏆 VICTORY! You sunk the entire enemy fleet!")
+            self.turn_var.set("Game over — you won!")
+        else:
+            self.msg_var.set("💀 DEFEAT! Your fleet has been destroyed!")
+            self.turn_var.set("Game over — enemy wins!")
+            # reveal enemy ships
+            for ship in self.enemy_ships:
+                for (r, c) in ship["cells"]:
+                    if not self.enemy_hidden[r][c]:
+                        self.enemy_hidden[r][c] = "reveal"
+            self._redraw_enemy()
+
+        messagebox.showinfo(
+            "Game Over",
+            "You won! 🏆" if player_wins else "You lost! 💀\nBetter luck next time."
+        )
+
+if __name__ == "__main__":
+    app = Battleship()
+    app.mainloop()
