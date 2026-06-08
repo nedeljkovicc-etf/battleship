@@ -197,3 +197,97 @@ class Battleship(tk.Tk):
                   **btn_cfg).pack(padx=14, pady=(10,4), fill="x")
         tk.Button(frame, text="?  RULES",    command=self._show_rules,
                   **btn_cfg).pack(padx=14, pady=(0,10), fill="x")
+        
+    # ── game initialisation ────────────────────────────────────────────────────
+    def new_game(self):
+        # state
+        self.player_board  = make_grid()
+        self.enemy_board   = make_grid()
+        self.enemy_hidden  = make_grid()   # what player sees of enemy
+        self.player_ships  = place_ships_random(self.player_board)
+        self.enemy_ships   = place_ships_random(self.enemy_board)
+        self.player_hits   = 0
+        self.player_misses = 0
+        self.player_sunk   = 0
+        self.ai_hits       = 0
+        self.ai_misses     = 0
+        self.ai_sunk       = 0
+        self.game_over     = False
+        self.player_turn   = True
+        self.hover_cell    = None
+
+    # ── event handlers ────────────────────────────────────────────────────────
+    def _on_hover(self, event):
+        cell = self._pixel_to_cell(event.x, event.y)
+        if cell != self.hover_cell:
+            self.hover_cell = cell
+            self._redraw_enemy()
+
+    def _on_leave(self, event):
+        self.hover_cell = None
+        self._redraw_enemy()
+
+    def _on_click(self, event):
+        if self.game_over or not self.player_turn:
+            return
+        cell = self._pixel_to_cell(event.x, event.y)
+        if not cell:
+            return
+        r, col = cell
+        if self.enemy_hidden[r][col]:
+            self.msg_var.set("Already fired there! Pick another cell.")
+            return
+        self._player_fire(r, col)
+
+    def _pixel_to_cell(self, x, y):
+        col = (x - PAD) // CELL
+        row = (y - PAD) // CELL
+        if 0 <= row < GRID and 0 <= col < GRID:
+            return (row, col)
+        return None
+    
+    # ── game logic ────────────────────────────────────────────────────────────
+    def _player_fire(self, r, col):
+        self.player_turn = False
+        hit, sunk_name = self._fire(r, col, self.enemy_board,
+                                    self.enemy_ships, self.enemy_hidden)
+        if hit:
+            self.player_hits += 1
+        else:
+            self.player_misses += 1
+
+        if sunk_name:
+            self.player_sunk += 1
+            self.msg_var.set(f"💥 You sunk their {sunk_name}!")
+            self._update_fleet_status()
+        elif hit:
+            self.msg_var.set("🎯 Direct hit!")
+        else:
+            self.msg_var.set("💧 Miss!")
+
+        self._update_stats()
+        self._redraw_enemy()
+
+        if self._check_win(self.enemy_ships):
+            self._end_game(player_wins=True)
+            return
+
+        self.turn_var.set("Enemy turn...")
+        self.after(900, self._ai_turn)
+
+    def _fire(self, r, col, board, ships, visible):
+        ship_name = board[r][col]
+        if ship_name:
+            visible[r][col] = "hit"
+            ship_obj = next((s for s in ships if s["name"]==ship_name), None)
+            if ship_obj:
+                ship_obj["hits"].add((r, col))
+                if len(ship_obj["hits"]) == ship_obj["size"]:
+                    return True, ship_name
+            return True, None
+        else:
+            visible[r][col] = "miss"
+            return False, None
+
+    def _check_win(self, ships):
+        return all(len(s["hits"]) == s["size"] for s in ships)
